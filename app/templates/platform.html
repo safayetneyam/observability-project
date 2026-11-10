@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Platform · DevTrails{% endblock %}
+{% block content %}
+<section class="wrap section narrow">
+  <div class="page-head center">
+    <span class="eyebrow">Under the hood</span>
+    <h1>How DevTrails is observed</h1>
+    <p class="lead">Three connected flows: metrics, Kubernetes logs and email alerting.</p>
+  </div>
+  <div class="flows">
+    <div class="flow"><span class="flow-n">01</span><h3>Metrics</h3><p>Node Exporter (Ubuntu host) and this app's <code>/metrics</code> → <b>Prometheus</b> (15s scrape) → <b>Grafana</b> dashboards.</p></div>
+    <div class="flow"><span class="flow-n">02</span><h3>Kubernetes logs</h3><p>MicroK8s workloads in the <code>devtrails</code> namespace → <b>Grafana Alloy</b> → <b>Loki</b> → Grafana Explore (LogQL).</p></div>
+    <div class="flow"><span class="flow-n">03</span><h3>Alerting</h3><p>Grafana alert rules (error rate, target down, CPU) → <b>SMTP</b> contact point → the on-call inbox.</p></div>
+  </div>
+  <h2 class="h-sm">Endpoints</h2>
+  <div class="table-wrap">
+  <table class="endpoints">
+    <tr><td><code>GET /health</code></td><td>Liveness and database check</td></tr>
+    <tr><td><code>POST /api/orders</code></td><td>Join a trail (business event)</td></tr>
+    <tr><td><code>GET /api/topics</code></td><td>Topic catalog</td></tr>
+    <tr><td><code>GET /api/posts/&lt;slug&gt;</code></td><td>Post content as JSON (counts a read)</td></tr>
+    <tr><td><code>GET /metrics</code></td><td>Prometheus exposition</td></tr>
+    <tr><td><code>POST /api/admin/chaos</code></td><td>Controlled-failure switch for demos</td></tr>
+  </table>
+  </div>
+  <p class="muted">Grafana: <code>{{ grafana_url }}</code> (private; use an SSH tunnel on EC2)</p>
+</section>
+{% endblock %}

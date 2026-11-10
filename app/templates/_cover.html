@@ -1,0 +1,8 @@
+{# Generated cover art. Expects `ct` (topic); optional `cover_part` (1-4) picks a pattern variant. #}
+<div class="cover v{{ ((cover_part or 1) - 1) % 4 + 1 }}" style="--accent: {{ ct.accent }}" aria-hidden="true">
+  <div class="cover-grid"></div>
+  <div class="cover-orb"></div>
+  <div class="cover-orb two"></div>
+  {% if cover_part %}<span class="cover-part">Part {{ cover_part }}</span>{% endif %}
+  <span class="cover-badge">{{ ct.badge }}</span>
+</div>

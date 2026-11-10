@@ -1,0 +1,45 @@
+{% extends "base.html" %}
+{% block title %}All posts · DevTrails{% endblock %}
+{% block content %}
+<section class="wrap section page-head">
+  <span class="eyebrow">Archive</span>
+  <h1>All posts</h1>
+  <p class="lead">{{ posts|length }} posts across {{ topics|length }} topics. Filter by topic or search by keyword.</p>
+  <div class="filters">
+    <div class="chips" role="tablist">
+      <button class="chip active" data-filter="all">All</button>
+      {% for t in topics %}<button class="chip" data-filter="{{ t.slug }}" style="--accent: {{ t.accent }}">{{ t.name }}</button>{% endfor %}
+    </div>
+    <input class="search" id="search" type="search" placeholder="Search posts…" aria-label="Search posts">
+  </div>
+</section>
+<section class="wrap section-tight">
+  <div class="cards" id="cards">
+    {% for p in posts %}{% include "_post_card.html" %}{% endfor %}
+  </div>
+  <p class="empty" id="empty" hidden>No posts match. Try another keyword.</p>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var topic = 'all', q = '';
+  var cards = document.querySelectorAll('#cards .card'), empty = document.getElementById('empty');
+  function apply() {
+    var shown = 0;
+    cards.forEach(function (c) {
+      var ok = (topic === 'all' || c.dataset.topic === topic) && (!q || c.dataset.text.indexOf(q) !== -1);
+      c.hidden = !ok; if (ok) shown++;
+    });
+    empty.hidden = shown !== 0;
+  }
+  document.querySelectorAll('.chip').forEach(function (b) {
+    b.addEventListener('click', function () {
+      document.querySelectorAll('.chip').forEach(function (x) { x.classList.remove('active'); });
+      b.classList.add('active'); topic = b.dataset.filter; apply();
+    });
+  });
+  document.getElementById('search').addEventListener('input', function (e) { q = e.target.value.trim().toLowerCase(); apply(); });
+})();
+</script>
+{% endblock %}

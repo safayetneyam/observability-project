@@ -1,0 +1,135 @@
+# Grafana-managed alerting, provisioned from file.
+# SMTP server settings come from GF_SMTP_* environment variables (.env, never committed).
+# The recipient is interpolated from ${ALERT_EMAIL_TO}. Alert templates use $labels/$values (Grafana leaves them untouched).
+apiVersion: 1
+
+contactPoints:
+  - orgId: 1
+    name: devtrails-oncall-email
+    receivers:
+      - uid: devtrails-oncall-email
+        type: email
+        settings:
+          addresses: ${ALERT_EMAIL_TO}
+          singleEmail: true
+          subject: '[{{ .Status | toUpper }}] DevTrails: {{ .CommonLabels.alertname }}'
+        disableResolveMessage: false
+
+policies:
+  - orgId: 1
+    receiver: devtrails-oncall-email
+    group_by: ["grafana_folder", "alertname"]
+    group_wait: 30s
+    group_interval: 2m
+    repeat_interval: 4h
+
+groups:
+  - orgId: 1
+    name: devtrails-application
+    folder: DevTrails Alerts
+    interval: 30s
+    rules:
+      - uid: devtrails-high-error-rate
+        title: DevTrails API high error rate
+        condition: C
+        for: 1m
+        noDataState: OK
+        execErrState: Error
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: >-
+                100 * (sum(rate(devtrails_http_requests_total{status=~"5.."}[2m])) or vector(0))
+                / clamp_min(sum(rate(devtrails_http_requests_total[2m])), 0.001)
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [5] }
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: 'DevTrails 5xx error rate is {{ printf "%.1f" $values.A.Value }}% (threshold 5%)'
+          description: >-
+            More than 5% of DevTrails HTTP requests returned 5xx for at least 1 minute
+            (2-minute rate window, evaluated every 30s).
+          runbook: >-
+            1) Grafana: open the DevTrails Overview dashboard and check "Error rate by route".
+            2) Check whether chaos mode is enabled: curl -s localhost:8000/api/admin/chaos.
+            3) docker compose logs --tail=100 app.
+            4) If a deploy caused it, roll back. Otherwise disable chaos with: curl -X DELETE localhost:8000/api/admin/chaos
+
+      - uid: devtrails-target-down
+        title: Scrape target down
+        condition: C
+        for: 1m
+        noDataState: Alerting
+        execErrState: Error
+        data:
+          - refId: A
+            relativeTimeRange: { from: 300, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: up{job=~"devtrails-app|node-exporter"}
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: lt, params: [1] }
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: 'Prometheus cannot scrape {{ $labels.job }} ({{ $labels.instance }})'
+          description: The target has failed every scrape for at least 1 minute.
+          runbook: >-
+            1) docker compose ps: is the container running and healthy?
+            2) Prometheus → Status → Targets shows the scrape error.
+            3) docker compose up -d <service>, then confirm up == 1.
+
+  - orgId: 1
+    name: devtrails-host
+    folder: DevTrails Alerts
+    interval: 1m
+    rules:
+      - uid: devtrails-host-high-cpu
+        title: Ubuntu host CPU above 90%
+        condition: C
+        for: 5m
+        noDataState: OK
+        execErrState: Error
+        data:
+          - refId: A
+            relativeTimeRange: { from: 600, to: 0 }
+            datasourceUid: prometheus
+            model:
+              refId: A
+              instant: true
+              expr: 100 * (1 - avg(rate(node_cpu_seconds_total{mode="idle"}[5m])))
+          - refId: C
+            datasourceUid: __expr__
+            model:
+              refId: C
+              type: threshold
+              expression: A
+              conditions:
+                - evaluator: { type: gt, params: [90] }
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: 'Host CPU at {{ printf "%.0f" $values.A.Value }}% for 5 minutes'
+          runbook: Run top or htop on the host, find the process using the CPU, and scale up or throttle it.

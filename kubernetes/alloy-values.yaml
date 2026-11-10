@@ -1,0 +1,117 @@
+# Helm values for grafana/alloy (tested with chart 1.15.0 / Alloy v1.21.3), installed into the "monitoring" namespace.
+#   microk8s helm3 repo add grafana https://grafana.github.io/helm-charts
+#   microk8s helm3 upgrade --install alloy grafana/alloy --version 1.15.0 -n monitoring -f kubernetes/alloy-values.yaml
+#
+# Alloy runs as a DaemonSet, discovers every Pod through the Kubernetes API, tails its CRI
+# log file under /var/log/pods (hostPath, read-only), parses the CRI format (keeping
+# stdout/stderr as the "stream" label) and pushes to Loki running in Docker Compose.
+# Loki is reachable only on the host-only bridge IP 172.28.0.1 (see compose.yaml).
+
+controller:
+  type: daemonset
+
+alloy:
+  mounts:
+    varlog: true            # mounts /var/log from the node read-only
+  securityContext:
+    runAsUser: 0            # /var/log/pods is root-only on Ubuntu
+  configMap:
+    create: true
+    content: |-
+      logging {
+        level  = "info"
+        format = "logfmt"
+      }
+
+      // 1. Discover pods scheduled on this node.
+      discovery.kubernetes "pods" {
+        role = "pod"
+        selectors {
+          role  = "pod"
+          field = "spec.nodeName=" + sys.env("NODE_NAME")
+        }
+      }
+
+      // 2. Turn Kubernetes metadata into Loki labels and point at the CRI log file.
+      discovery.relabel "pod_logs" {
+        targets = discovery.kubernetes.pods.targets
+
+        rule {
+          source_labels = ["__meta_kubernetes_pod_phase"]
+          regex         = "Pending|Succeeded|Failed|Unknown"
+          action        = "drop"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace"]
+          target_label  = "namespace"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_name"]
+          target_label  = "pod"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_container_name"]
+          target_label  = "container"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_label_app_kubernetes_io_name"]
+          target_label  = "app"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_node_name"]
+          target_label  = "node"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_namespace", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "job"
+        }
+        rule {
+          source_labels = ["__meta_kubernetes_pod_uid", "__meta_kubernetes_pod_container_name"]
+          separator     = "/"
+          target_label  = "__path__"
+          replacement   = "/var/log/pods/*$1/*.log"
+        }
+      }
+
+      local.file_match "pod_logs" {
+        path_targets = discovery.relabel.pod_logs.output
+      }
+
+      // 3. Tail the files.
+      loki.source.file "pod_logs" {
+        targets    = local.file_match.pod_logs.targets
+        forward_to = [loki.process.pod_logs.receiver]
+      }
+
+      // 4. Parse CRI lines (timestamp, stream=stdout|stderr), then lift "level" out of JSON logs.
+      loki.process "pod_logs" {
+        stage.cri {}
+
+        stage.json {
+          expressions = { level = "level" }
+        }
+        stage.labels {
+          values = { level = "" }
+        }
+
+        forward_to = [loki.write.default.receiver]
+      }
+
+      // 5. Ship to Loki (Docker Compose stack on the host).
+      loki.write "default" {
+        endpoint {
+          url = "http://172.28.0.1:3100/loki/api/v1/push"
+        }
+        external_labels = {
+          cluster = "microk8s",
+        }
+      }
+  extraEnv:
+    - name: NODE_NAME
+      valueFrom:
+        fieldRef:
+          fieldPath: spec.nodeName
+  resources:
+    requests: { cpu: 50m, memory: 96Mi }
+    limits: { memory: 256Mi }

@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block title %}Join · DevTrails{% endblock %}
+{% block content %}
+<section class="wrap section narrow">
+  <div class="page-head center">
+    <span class="eyebrow">Join a trail</span>
+    <h1>Choose your topic and plan</h1>
+    <p class="lead">Each sign-up sends a <code>POST /api/orders</code> request and is counted in <code>devtrails_orders_total</code>.</p>
+  </div>
+
+  <form id="enroll" class="enroll-form">
+    <label class="field">Topic trail
+      <select name="topic" required>
+        {% for t in topics %}<option value="{{ t.slug }}" {{ 'selected' if t.slug == selected }}>{{ t.name }} ({{ t.posts|length }} posts)</option>{% endfor %}
+      </select>
+    </label>
+
+    <fieldset class="plans">
+      <legend>Plan</legend>
+      {% for key, p in plans.items() %}
+      <label class="plan">
+        <input type="radio" name="plan" value="{{ key }}" {{ 'checked' if key == 'pro' }}>
+        <div class="plan-body">
+          <div class="plan-top"><strong>{{ p.name }}</strong>{% if key == 'pro' %}<span class="tag">Popular</span>{% endif %}</div>
+          <div class="price">${{ p.price }}<small>/month</small></div>
+          <ul>{% for perk in p.perks %}<li>{{ perk }}</li>{% endfor %}</ul>
+        </div>
+      </label>
+      {% endfor %}
+    </fieldset>
+
+    <label class="field">Email <input type="email" name="email" placeholder="you@example.com" required autocomplete="email"></label>
+    <button class="btn btn-primary btn-block" type="submit">Confirm</button>
+    <div id="result" class="result" role="status" hidden></div>
+  </form>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('enroll').addEventListener('submit', async function (e) {
+  e.preventDefault();
+  var f = new FormData(e.target), out = document.getElementById('result');
+  var body = { topic: f.get('topic'), plan: f.get('plan'), email: f.get('email') };
+  try {
+    var r = await fetch('/api/orders', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    var j = await r.json();
+    out.hidden = false;
+    out.className = 'result ' + (r.ok ? 'ok' : 'err');
+    out.textContent = r.ok ? '✓ You are in! Order #' + j.id + ': ' + j.topic + ' (' + j.plan + '), $' + j.amount
+                           : '✗ ' + r.status + ': ' + j.error + (j.details ? ' · ' + j.details.join('; ') : '');
+  } catch (err) { out.hidden = false; out.className = 'result err'; out.textContent = '✗ Network error'; }
+});
+</script>
+{% endblock %}

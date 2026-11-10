@@ -1,0 +1,11 @@
+{% set ct = topics_by_slug[p.topic] %}
+<article class="card" data-topic="{{ p.topic }}" data-text="{{ (p.title ~ ' ' ~ p.summary)|lower }}">
+  <a href="/blog/{{ p.slug }}" class="card-link" aria-label="{{ p.title }}"></a>
+  {% set cover_part = p.part %}{% include "_cover.html" %}
+  <div class="card-body">
+    <div class="meta"><span class="topic-pill" style="--accent: {{ ct.accent }}">{{ ct.name }}</span><span>{{ p.minutes }} min read</span></div>
+    <h3>{{ p.title }}</h3>
+    <p>{{ p.summary }}</p>
+    <div class="meta meta-foot"><span>{{ p.level }}</span><span>·</span><time datetime="{{ p.date }}">{{ p.date|datefmt }}</time></div>
+  </div>
+</article>

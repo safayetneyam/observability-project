@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}{{ topic.name }} · DevTrails{% endblock %}
+{% block description %}{{ topic.tagline }}{% endblock %}
+{% block content %}
+<section class="topic-hero" style="--accent: {{ topic.accent }}">
+  <div class="wrap topic-hero-inner">
+    <div>
+      <a class="crumb" href="/#topics">← All topics</a>
+      <span class="badge badge-xl">{{ topic.badge }}</span>
+      <h1>{{ topic.name }}</h1>
+      <p class="lead">{{ topic.tagline }}</p>
+      <div class="meta"><span>{{ topic.posts|length }} posts</span><span>·</span><span>{{ topic.posts|sum(attribute='minutes') }} min total</span><span>·</span><span>{{ topic.level }}</span></div>
+    </div>
+    <div class="topic-hero-cta">
+      <a class="btn btn-primary" href="/blog/{{ topic.posts[0].slug }}">Start with part 1</a>
+      <a class="btn btn-ghost" href="/enroll?topic={{ topic.slug }}">Join this trail</a>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section">
+  <ol class="trail">
+    {% for p in topic.posts %}
+    <li class="trail-step" style="--accent: {{ topic.accent }}">
+      <span class="trail-num">{{ loop.index }}</span>
+      <a class="trail-card" href="/blog/{{ p.slug }}">
+        <div class="meta"><span>Part {{ loop.index }}</span><span>·</span><span>{{ p.level }}</span><span>·</span><span>{{ p.minutes }} min read</span></div>
+        <h2>{{ p.title }}</h2>
+        <p>{{ p.summary }}</p>
+        <ul class="trail-heads">{% for s in p.sections %}<li>{{ s.h }}</li>{% endfor %}</ul>
+        <span class="read-more">Read →</span>
+      </a>
+    </li>
+    {% endfor %}
+  </ol>
+</section>
+{% endblock %}

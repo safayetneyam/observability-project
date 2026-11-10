@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+{% block title %}{{ post.title }} · DevTrails{% endblock %}
+{% block description %}{{ post.summary }}{% endblock %}
+{% block progress %}<div class="progress" id="progress"></div>{% endblock %}
+{% block content %}
+<article class="post" style="--accent: {{ topic.accent }}">
+  <header class="post-head wrap-narrow">
+    <a class="crumb" href="/topics/{{ topic.slug }}">← {{ topic.name }} trail · part {{ post.part }} of {{ topic.posts|length }}</a>
+    <div class="meta"><span class="topic-pill">{{ topic.name }}</span><span>{{ post.level }}</span><span>·</span><span>{{ post.minutes }} min read</span></div>
+    <h1>{{ post.title }}</h1>
+    <p class="dek">{{ post.summary }}</p>
+    <div class="byline">
+      <span class="avatar">{{ author.initials }}</span>
+      <div><strong>{{ author.name }}</strong><span><time datetime="{{ post.date }}">{{ post.date|datefmt }}</time></span></div>
+    </div>
+  </header>
+
+  <div class="wrap post-cover">{% set ct = topic %}{% set cover_part = post.part %}{% include "_cover.html" %}</div>
+
+  <div class="wrap post-layout">
+    <aside class="toc" aria-label="On this page">
+      <h4>On this page</h4>
+      <ol>
+        <li><a href="#takeaways">Key takeaways</a></li>
+        {% for s in post.sections %}<li><a href="#{{ post.anchors[loop.index0] }}">{{ s.h }}</a></li>{% endfor %}
+      </ol>
+    </aside>
+
+    <div class="prose">
+      <div class="takeaways" id="takeaways">
+        <h4>Key takeaways</h4>
+        <ul>{% for t in post.takeaways %}<li>{{ t|md }}</li>{% endfor %}</ul>
+      </div>
+
+      {% for s in post.sections %}
+      <h2 id="{{ post.anchors[loop.index0] }}">{{ s.h }}</h2>
+      {% for para in s.p %}<p>{{ para|md }}</p>{% endfor %}
+      {% if s.code %}
+      <figure class="code">
+        <figcaption><span>terminal</span><button class="copy" type="button">Copy</button></figcaption>
+        <pre><code>{{ s.code }}</code></pre>
+      </figure>
+      {% endif %}
+      {% endfor %}
+
+      <nav class="pager" aria-label="Trail navigation">
+        {% if prev_post %}<a class="pager-item" href="/blog/{{ prev_post.slug }}"><small>← Previous</small><strong>{{ prev_post.title }}</strong></a>{% else %}<span></span>{% endif %}
+        {% if next_post %}<a class="pager-item next" href="/blog/{{ next_post.slug }}"><small>Next in trail →</small><strong>{{ next_post.title }}</strong></a>{% endif %}
+      </nav>
+
+      <div class="post-cta">
+        <div><strong>Following the {{ topic.name }} trail?</strong><span>Join to get every new part in your inbox.</span></div>
+        <a class="btn btn-primary" href="/enroll?topic={{ topic.slug }}">Join the trail</a>
+      </div>
+    </div>
+  </div>
+</article>
+
+<section class="wrap section">
+  <div class="section-head"><div><span class="eyebrow">Keep reading</span><h2>From other trails</h2></div></div>
+  <div class="cards">{% for p in related %}{% include "_post_card.html" %}{% endfor %}</div>
+</section>
+{% endblock %}
+{% block scripts %}
+<script>
+(function () {
+  var bar = document.getElementById('progress'), prose = document.querySelector('.prose');
+  function onScroll() {
+    var r = prose.getBoundingClientRect(), total = r.height - innerHeight;
+    var pct = total > 0 ? Math.min(100, Math.max(0, -r.top / total * 100)) : 100;
+    bar.style.width = pct + '%';
+  }
+  addEventListener('scroll', onScroll, { passive: true }); onScroll();
+
+  var links = {};
+  document.querySelectorAll('.toc a').forEach(function (a) { links[a.getAttribute('href').slice(1)] = a; });
+  if ('IntersectionObserver' in window) {
+    var io = new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (e.isIntersecting && links[e.target.id]) {
+          Object.values(links).forEach(function (l) { l.classList.remove('active'); });
+          links[e.target.id].classList.add('active');
+        }
+      });
+    }, { rootMargin: '-20% 0px -70% 0px' });
+    document.querySelectorAll('.prose h2[id], #takeaways').forEach(function (h) { io.observe(h); });
+  }
+
+  document.querySelectorAll('.copy').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var text = b.closest('figure').querySelector('code').innerText;
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
+        b.textContent = 'Copied'; setTimeout(function () { b.textContent = 'Copy'; }, 1400);
+      }).catch(function () { b.textContent = 'Select & copy'; });
+    });
+  });
+})();
+</script>
+{% endblock %}

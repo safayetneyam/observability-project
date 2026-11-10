@@ -1,0 +1,12 @@
+# secrets
+.env
+*.env.local
+# python
+__pycache__/
+*.pyc
+.venv/
+*.db
+# misc
+*.zip
+.DS_Store
+evidence/raw/

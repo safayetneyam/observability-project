@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+{% block content %}
+<section class="hero">
+  <div class="wrap">
+    <div class="hero-head">
+      <span class="eyebrow">The DevTrails journal</span>
+      <h1>Learn DevOps one <em>trail</em> at a time.</h1>
+      <p class="lead">Short, accurate posts grouped into topic trails, from your first Kubernetes Pod to PromQL and Grafana alerting. Every post ends with commands you can run.</p>
+      <div class="stats">
+        <div><strong>{{ stats.topics }}</strong><span>topics</span></div>
+        <div><strong>{{ stats.posts }}</strong><span>posts</span></div>
+        <div><strong>{{ stats.minutes }}</strong><span>minutes of reading</span></div>
+        <div><strong>{{ stats.enrollments }}</strong><span>readers joined</span></div>
+      </div>
+    </div>
+
+    {% set ct = topics_by_slug[featured.topic] %}
+    <div class="feature">
+      <a class="feature-main" href="/blog/{{ featured.slug }}">
+        {% set cover_part = featured.part %}{% include "_cover.html" %}
+        <div class="feature-body">
+          <div class="meta"><span class="topic-pill" style="--accent: {{ ct.accent }}">{{ ct.name }}</span><span>Latest</span><span>{{ featured.minutes }} min read</span></div>
+          <h2>{{ featured.title }}</h2>
+          <p>{{ featured.summary }}</p>
+          <span class="read-more">Read the post →</span>
+        </div>
+      </a>
+      <div class="feature-side">
+        <h4 class="side-label">Also new</h4>
+        {% for p in side %}{% set st = topics_by_slug[p.topic] %}
+        <a class="side-item" href="/blog/{{ p.slug }}">
+          <span class="badge" style="--accent: {{ st.accent }}">{{ st.badge }}</span>
+          <div>
+            <div class="meta"><span>{{ st.name }}</span><span>·</span><span>{{ p.minutes }} min</span></div>
+            <h3>{{ p.title }}</h3>
+          </div>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="wrap section" id="topics">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Trails</span>
+      <h2>Pick a topic</h2>
+    </div>
+    <p>Each trail is a short, ordered series, from fundamentals to production practice.</p>
+  </div>
+  <div class="topics-grid">
+    {% for t in topics %}
+    <a class="topic-card" href="/topics/{{ t.slug }}" style="--accent: {{ t.accent }}">
+      <span class="badge badge-lg">{{ t.badge }}</span>
+      <h3>{{ t.name }}</h3>
+      <p>{{ t.tagline }}</p>
+      <ol class="topic-peek">{% for p in t.posts[:3] %}<li>{{ p.title }}</li>{% endfor %}</ol>
+      <div class="meta"><span>{{ t.posts|length }} posts</span><span>·</span><span>{{ t.level }}</span><span class="arrow">→</span></div>
+    </a>
+    {% endfor %}
+  </div>
+</section>
+
+<section class="wrap section">
+  <div class="section-head">
+    <div>
+      <span class="eyebrow">Recently published</span>
+      <h2>Latest posts</h2>
+    </div>
+    <a class="btn btn-ghost" href="/blog">Browse all posts →</a>
+  </div>
+  <div class="cards">
+    {% for p in latest %}{% include "_post_card.html" %}{% endfor %}
+  </div>
+</section>
+
+<section class="wrap section">
+  <div class="cta">
+    <div>
+      <h2>Follow a trail end to end</h2>
+      <p>Join free for the weekly digest, or go Pro for lab guides and cheat sheets.</p>
+    </div>
+    <a class="btn btn-light" href="/enroll">Join DevTrails</a>
+  </div>
+</section>
+{% endblock %}

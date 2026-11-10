@@ -1,0 +1,163 @@
+# DevTrails workloads running in MicroK8s (namespace: devtrails).
+#  - blog-indexer:      background worker that builds the search index for blog posts. It logs
+#                       normal events to stdout and failures to stderr, including an intentional,
+#                       periodic malformed-front-matter error scenario.
+#  - learner-simulator: synthetic learners calling the DevTrails API running in Docker Compose.
+#                       It logs each response, so app failures (e.g. chaos mode) show up in these pod logs.
+# Both use the stock python:3.12-alpine image with the script mounted from a ConfigMap,
+# so no image registry or import is needed.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: devtrails-workers
+  namespace: devtrails
+  labels: { app.kubernetes.io/part-of: devtrails }
+data:
+  blog_indexer.py: |
+    import json, os, random, sys, time
+    TOPICS = ["kubernetes", "docker", "linux", "observability", "cicd", "cloud"]
+    FAIL_EVERY = int(os.getenv("FAIL_EVERY_N_JOBS", "12"))
+    FAILURE_MODE = os.getenv("FAILURE_MODE", "false").lower() == "true"
+    POD = os.getenv("POD_NAME", "blog-indexer")
+    def emit(level, msg, **kw):
+        line = json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "level": level,
+                           "component": "blog-indexer", "pod": POD, "msg": msg, **kw})
+        print(line, file=sys.stderr if level in ("ERROR", "CRITICAL") else sys.stdout, flush=True)
+    emit("INFO", "indexer started", fail_every=FAIL_EVERY, failure_mode=FAILURE_MODE)
+    job = 0
+    while True:
+        job += 1
+        topic = random.choice(TOPICS)
+        job_id = f"idx-{job:05d}"
+        emit("INFO", "indexing post revision", job_id=job_id, topic=topic, revision=random.randint(1, 40))
+        secs = round(random.uniform(0.8, 3.5), 2)
+        time.sleep(secs)
+        if FAILURE_MODE or (FAIL_EVERY and job % FAIL_EVERY == 0):
+            emit("ERROR", "index failed: malformed front matter (line 3: mapping values are not allowed here)",
+                 job_id=job_id, topic=topic, error="FrontMatterParseError", retryable=False)
+            continue
+        if random.random() < 0.08:
+            emit("WARN", "search backend slow, retrying batch", job_id=job_id, attempt=2)
+        emit("INFO", "post indexed", job_id=job_id, topic=topic, duration_s=secs,
+             tokens=random.randint(600, 4200), headings=random.randint(2, 6))
+
+  learner_simulator.py: |
+    import json, os, random, sys, time, urllib.request, urllib.error
+    BASE = os.getenv("TARGET_URL", "http://172.28.0.1:8000").rstrip("/")
+    INTERVAL = float(os.getenv("INTERVAL_SECONDS", "2"))
+    POD = os.getenv("POD_NAME", "learner-simulator")
+    TOPICS = ["kubernetes", "docker", "linux", "observability", "cicd", "cloud"]
+    PLANS = ["free", "free", "pro", "team"]
+    def emit(level, msg, **kw):
+        line = json.dumps({"ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()), "level": level,
+                           "component": "learner-simulator", "pod": POD, "msg": msg, **kw})
+        print(line, file=sys.stderr if level == "ERROR" else sys.stdout, flush=True)
+    def call(method, path, body=None):
+        data = json.dumps(body).encode() if body is not None else None
+        req = urllib.request.Request(BASE + path, data=data, method=method,
+                                     headers={"Content-Type": "application/json", "User-Agent": "devtrails-learner-sim"})
+        t0 = time.time()
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                status, payload = r.status, r.read()
+        except urllib.error.HTTPError as e:
+            status, payload = e.code, e.read()
+        except Exception as e:
+            emit("ERROR", "DevTrails API unreachable", method=method, path=path, error=str(e))
+            return None, None
+        ms = round((time.time() - t0) * 1000, 1)
+        level = "ERROR" if status >= 500 else ("WARN" if status >= 400 else "INFO")
+        emit(level, f"{method} {path} -> {status}", status=status, latency_ms=ms)
+        return status, payload
+    emit("INFO", "learner simulator started", target=BASE, interval_s=INTERVAL)
+    while True:
+        status, payload = call("GET", "/api/topics")
+        if status == 200:
+            try:
+                topic = random.choice(json.loads(payload))["slug"]
+                st, p = call("GET", f"/api/topics/{topic}")
+                if st == 200:
+                    post = random.choice(json.loads(p)["posts"])["slug"]
+                    call("GET", f"/api/posts/{post}")
+            except (ValueError, KeyError, IndexError):
+                emit("WARN", "unexpected API payload")
+        r = random.random()
+        if r < 0.15:
+            call("POST", "/api/orders", {"topic": random.choice(TOPICS), "plan": random.choice(PLANS),
+                                         "email": f"learner{random.randint(1, 999)}@example.com"})
+        elif r < 0.18:
+            call("POST", "/api/orders", {"topic": "quantum-basket-weaving", "plan": "pro", "email": "bad"})
+        time.sleep(INTERVAL * random.uniform(0.5, 1.5))
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: blog-indexer
+  namespace: devtrails
+  labels: &labels
+    app.kubernetes.io/name: blog-indexer
+    app.kubernetes.io/part-of: devtrails
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app.kubernetes.io/name: blog-indexer }
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: worker
+          image: python:3.12-alpine
+          command: ["python", "-u", "/scripts/blog_indexer.py"]
+          env:
+            - { name: FAIL_EVERY_N_JOBS, value: "12" }
+            - { name: FAILURE_MODE, value: "false" }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true }
+          volumeMounts:
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+      volumes:
+        - name: scripts
+          configMap: { name: devtrails-workers }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: learner-simulator
+  namespace: devtrails
+  labels: &labels
+    app.kubernetes.io/name: learner-simulator
+    app.kubernetes.io/part-of: devtrails
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: learner-simulator }
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      securityContext: { runAsNonRoot: true, runAsUser: 10001 }
+      containers:
+        - name: simulator
+          image: python:3.12-alpine
+          command: ["python", "-u", "/scripts/learner_simulator.py"]
+          env:
+            # Host-only bridge address of the Docker Compose "observability" network.
+            - { name: TARGET_URL, value: "http://172.28.0.1:8000" }
+            - { name: INTERVAL_SECONDS, value: "2" }
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+          resources:
+            requests: { cpu: 10m, memory: 32Mi }
+            limits: { cpu: 100m, memory: 64Mi }
+          securityContext: { allowPrivilegeEscalation: false, readOnlyRootFilesystem: true }
+          volumeMounts:
+            - { name: scripts, mountPath: /scripts, readOnly: true }
+      volumes:
+        - name: scripts
+          configMap: { name: devtrails-workers }
